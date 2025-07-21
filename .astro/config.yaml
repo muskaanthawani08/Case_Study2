@@ -1,0 +1,6 @@
+project:
+  name: test_dag
+
+include:
+  - dags/**/*
+  - include/**/*

@@ -66,8 +66,16 @@ dag = DAG(
     catchup=False
 )
 
+start_pipeline = EmptyOperator(
+    task_id='start_pipeline',
+    dag=dag
+)
+
 download_task = PythonOperator(
     task_id='download_sales_data',
     python_callable=download_data,
     dag=dag
 )
+
+# Define dependencies
+start_pipeline >> download_task

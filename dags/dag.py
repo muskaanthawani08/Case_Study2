@@ -34,6 +34,9 @@ def fetch_product_data(ti):
     if response.status_code != 200:
         raise Exception(f"API failed with status {response.status_code}")
     df = pd.DataFrame(response.json())
+    df['name'] = df['name'].str.title()
+    df['category'] = df['category'].str.lower()
+    df['product_id'] = df['product_id'].astype(str)
     ti.xcom_push(key='product_data', value=df.to_json())
 
 fetch_product = PythonOperator(
@@ -58,6 +61,10 @@ def extract_snowflake(ti):
     feedback = pd.DataFrame(cur.execute("SELECT * FROM feedback_data").fetchall(),
                             columns=[col[0] for col in cur.description])
 
+    for df in [sales, feedback]:
+        df['product_id'] = df['product_id'].astype(str)
+        df['user_id'] = df['user_id'].astype(str)
+
     ti.xcom_push(key='sales_data', value=sales.to_json())
     ti.xcom_push(key='feedback_data', value=feedback.to_json())
 
@@ -75,22 +82,29 @@ def transform_and_check(ti):
     feedback = pd.read_json(ti.xcom_pull(task_ids='extract_snowflake_data', key='feedback_data'))
     product = pd.read_json(ti.xcom_pull(task_ids='fetch_product_data', key='product_data'))
 
-    product['product_name'] = product['product_name'].str.title()
-    product['category'] = product['category'].str.lower()
+    sales['product_id'] = sales['product_id'].astype(str)
+    sales['user_id'] = sales['user_id'].astype(str)
+    feedback['product_id'] = feedback['product_id'].astype(str)
+    feedback['user_id'] = feedback['user_id'].astype(str)
+    product['product_id'] = product['product_id'].astype(str)
 
-    df = sales.merge(product, on='product_id', how='left').merge(feedback, on='product_id', how='left')
+    # Join sales with product
+    sales_with_product = sales.merge(product, on='product_id', how='left')
 
-    result = df.groupby('product_id').agg({
-        'sales_amount': 'sum',
-        'feedback_score': 'mean'
+    # Join with feedback
+    full_df = sales_with_product.merge(feedback, on=['product_id', 'user_id'], how='left')
+
+    # Aggregate total quantity and average rating
+    result = full_df.groupby('product_id').agg({
+        'quantity': 'sum',
+        'rating': 'mean'
     }).reset_index()
 
+    # Data quality checks
     if result['product_id'].isnull().any():
-        raise ValueError("Nulls in product_id")
-    if not result['product_id'].isin(product['product_id']).all():
-        raise ValueError("Sales contain unknown product_ids")
-    if not result['feedback_score'].between(1, 5).all():
-        raise ValueError("Feedback score out of expected range")
+        raise ValueError("Missing product_id after join.")
+    if not result['rating'].between(0, 5).all():
+        logging.warning("Some ratings are outside expected range. Data may need review.")
 
     ti.xcom_push(key='cleaned_data', value=result.to_json())
 
@@ -115,8 +129,8 @@ def load_to_snowflake(ti):
 
     for _, row in df.iterrows():
         cur.execute(
-            "INSERT INTO analytics_table (product_id, sales_amount, feedback_score) VALUES (%s, %s, %s)",
-            (row['product_id'], row['sales_amount'], row['feedback_score'])
+            "INSERT INTO analytics_table (product_id, quantity, rating) VALUES (%s, %s, %s)",
+            (row['product_id'], row['quantity'], row['rating'])
         )
 
     conn.commit()

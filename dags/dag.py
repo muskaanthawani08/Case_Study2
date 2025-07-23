@@ -1,8 +1,6 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
-from airflow.providers.http.operators.simple_http import SimpleHttpOperator
-from airflow.providers.http.sensors.http import HttpSensor
 from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
 from airflow.utils.dates import days_ago
 from airflow.utils.trigger_rule import TriggerRule
@@ -11,7 +9,7 @@ import os
 import logging
 from dotenv import load_dotenv
 import snowflake.connector
-import json
+import requests
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -23,39 +21,36 @@ default_args = {
 }
 
 dag = DAG(
-    'ecommerce_etl_pipeline',
+    'ecommerce_etl_pipeline_v2',
     default_args=default_args,
     schedule_interval=None,
     catchup=False
 )
 
-# Start Task
+# Start
 start = EmptyOperator(task_id='start', dag=dag)
 
-# Check REST API
-check_api = HttpSensor(
-    task_id='check_api',
-    http_conn_id='product_api_connection',
-    endpoint='L8OKa9/product_data',
-    response_check=lambda response: "product_name" in response.text,
-    poke_interval=10,
-    timeout=60,
-    dag=dag
-)
+# Fetch product data using requests
+def fetch_product_data():
+    url = "https://retoolapi.dev/L8OKa9/product_data"
+    response = requests.get(url)
 
-# Fetch Product Data
-fetch_product_data = SimpleHttpOperator(
+    if response.status_code != 200:
+        raise Exception(f"API failed with status {response.status_code}")
+
+    data = response.json()
+    df = pd.DataFrame(data)
+    df.to_json('/tmp/fetched_product_data.json', orient='records')
+    logging.info("Product data fetched and saved.")
+
+fetch_product = PythonOperator(
     task_id='fetch_product_data',
-    http_conn_id='product_api_connection',
-    endpoint='L8OKa9/product_data',
-    method='GET',
-    response_filter=lambda response: json.loads(response.text),
-    log_response=True,
+    python_callable=fetch_product_data,
     dag=dag
 )
 
-# Extract Snowflake Data
-def extract_snowflake(**kwargs):
+# Extract Snowflake data
+def extract_snowflake():
     conn = snowflake.connector.connect(
         user=os.getenv('SNOWFLAKE_USER'),
         password=os.getenv('SNOWFLAKE_PASSWORD'),
@@ -66,11 +61,10 @@ def extract_snowflake(**kwargs):
     )
     cur = conn.cursor()
 
-    sales_query = "SELECT * FROM sales_data"
-    feedback_query = "SELECT * FROM feedback_data"
-
-    sales_df = pd.DataFrame(cur.execute(sales_query).fetchall(), columns=[col[0] for col in cur.description])
-    feedback_df = pd.DataFrame(cur.execute(feedback_query).fetchall(), columns=[col[0] for col in cur.description])
+    sales_df = pd.DataFrame(cur.execute("SELECT * FROM sales_data").fetchall(),
+                            columns=[col[0] for col in cur.description])
+    feedback_df = pd.DataFrame(cur.execute("SELECT * FROM feedback_data").fetchall(),
+                               columns=[col[0] for col in cur.description])
 
     sales_df.to_pickle('/tmp/sales.pkl')
     feedback_df.to_pickle('/tmp/feedback.pkl')
@@ -78,7 +72,7 @@ def extract_snowflake(**kwargs):
     cur.close()
     conn.close()
 
-extract_data_snowflake = PythonOperator(
+extract_snowflake_data = PythonOperator(
     task_id='extract_snowflake_data',
     python_callable=extract_snowflake,
     dag=dag
@@ -118,7 +112,7 @@ transform_data = PythonOperator(
     dag=dag
 )
 
-# Load to Snowflake
+# Load into Snowflake
 def load_to_snowflake():
     df = pd.read_pickle('/tmp/cleaned_data.pkl')
     
@@ -148,15 +142,15 @@ load_data = PythonOperator(
     dag=dag
 )
 
-# Slack Alert
+# Slack Alert on Failure
 slack_alert = SlackWebhookOperator(
     task_id='slack_alert_failure',
     http_conn_id='slack_connection',
-    message="⚠️ Data quality check failed in ecommerce_etl_pipeline",
+    message="⚠️ Data quality check failed in ecommerce_etl_pipeline_v2",
     trigger_rule=TriggerRule.ONE_FAILED,
     dag=dag
 )
 
 # DAG Dependencies
-start >> check_api >> fetch_product_data >> extract_data_snowflake >> transform_data >> load_data
+start >> fetch_product >> extract_snowflake_data >> transform_data >> load_data
 transform_data >> slack_alert

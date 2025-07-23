@@ -1,2 +1,3 @@
 apache-airflow-providers-snowflake>=6.4.0
 snowflake-connector-python
+apache-airflow-providers-http

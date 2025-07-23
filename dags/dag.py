@@ -3,8 +3,8 @@ from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
 # from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
 from airflow.utils.trigger_rule import TriggerRule
-from airflow.providers.http.operators.simple_http import SimpleHttpOperator
-
+# from airflow.providers.http.operators.simple_http import SimpleHttpOperator
+from airflow.operators.python import PythonOperator
 import pandas as pd
 import os
 import logging

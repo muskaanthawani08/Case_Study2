@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import snowflake.connector
 import requests
 from datetime import datetime, timedelta
-from io import StringIO  # ✅ For safe read_json
+from io import StringIO
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -35,7 +35,6 @@ def fetch_product_data(ti):
         raise Exception(f"API failed with status {response.status_code}")
     df = pd.DataFrame(response.json())
 
-    # Normalize columns
     if 'name' in df.columns:
         df['name'] = df['name'].str.title()
     if 'category' in df.columns:
@@ -62,21 +61,17 @@ def extract_snowflake(ti):
     )
     cur = conn.cursor()
 
-    # Extract from Snowflake
     sales = pd.DataFrame(cur.execute("SELECT * FROM sales_data").fetchall(),
                          columns=[col[0] for col in cur.description])
     feedback = pd.DataFrame(cur.execute("SELECT * FROM feedback_data").fetchall(),
                             columns=[col[0] for col in cur.description])
 
-    # Log columns
     logging.info("Sales columns: %s", sales.columns.tolist())
     logging.info("Feedback columns: %s", feedback.columns.tolist())
 
-    # Rename if needed
     sales.rename(columns=lambda x: x.lower(), inplace=True)
     feedback.rename(columns=lambda x: x.lower(), inplace=True)
 
-    # Ensure key columns exist
     for df in [sales, feedback]:
         if 'product_id' in df.columns:
             df['product_id'] = df['product_id'].astype(str)
@@ -96,17 +91,14 @@ extract_snowflake_data = PythonOperator(
 )
 
 def transform_and_check(ti):
-    # Load from XCom safely
     sales = pd.read_json(StringIO(ti.xcom_pull(task_ids='extract_snowflake_data', key='sales_data')))
     feedback = pd.read_json(StringIO(ti.xcom_pull(task_ids='extract_snowflake_data', key='feedback_data')))
     product = pd.read_json(StringIO(ti.xcom_pull(task_ids='fetch_product_data', key='product_data')))
 
-    # Log column headers
     logging.info("Sales: %s", sales.columns.tolist())
     logging.info("Feedback: %s", feedback.columns.tolist())
     logging.info("Product: %s", product.columns.tolist())
 
-    # Check key columns
     for df_name, df in [('sales', sales), ('feedback', feedback), ('product', product)]:
         if 'product_id' not in df.columns:
             raise KeyError(f"'product_id' missing in {df_name}")
@@ -117,13 +109,9 @@ def transform_and_check(ti):
             raise KeyError(f"'user_id' missing in {df_name}")
         df['user_id'] = df['user_id'].astype(str)
 
-    # Join sales with product
     sales_product = sales.merge(product, on='product_id', how='left')
-
-    # Join feedback
     full_df = sales_product.merge(feedback, on=['product_id', 'user_id'], how='left')
 
-    # Aggregation
     if 'quantity' not in full_df.columns or 'rating' not in full_df.columns:
         raise KeyError("Missing 'quantity' or 'rating' column in joined data.")
 
@@ -132,14 +120,10 @@ def transform_and_check(ti):
         'rating': 'mean'
     }).reset_index()
 
-    # Log first few rows of transformed data
     logging.info("Transformed Summary:\n%s", result.head())
 
-    # Validate ratings
     if not result['rating'].between(0, 5).all():
         logging.warning("⚠ Some feedback ratings fall outside 0–5 range.")
-
-    ti.xcom_push(key='cleaned_data', value=result.to_json())
 
     ti.xcom_push(key='cleaned_data', value=result.to_json())
 
@@ -161,6 +145,15 @@ def load_to_snowflake(ti):
         schema=os.getenv('SNOWFLAKE_SCHEMA')
     )
     cur = conn.cursor()
+
+    # ✅ Create table if it doesn't exist
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS analytics_table (
+            product_id STRING,
+            quantity NUMBER,
+            rating FLOAT
+        );
+    """)
 
     for _, row in df.iterrows():
         cur.execute(

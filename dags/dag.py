@@ -4,6 +4,8 @@ from airflow.operators.empty import EmptyOperator
 from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
 from airflow.utils.dates import days_ago
 from airflow.utils.trigger_rule import TriggerRule
+from airflow.providers.http.operators.simple_http import SimpleHttpOperator
+
 import pandas as pd
 import os
 import logging

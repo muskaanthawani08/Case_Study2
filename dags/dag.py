@@ -1,7 +1,7 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
-from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
+# from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
 from airflow.utils.dates import days_ago
 from airflow.utils.trigger_rule import TriggerRule
 from airflow.providers.http.operators.simple_http import SimpleHttpOperator
@@ -144,15 +144,15 @@ load_data = PythonOperator(
     dag=dag
 )
 
-# Slack Alert on Failure
-slack_alert = SlackWebhookOperator(
-    task_id='slack_alert_failure',
-    http_conn_id='slack_connection',
-    message="⚠️ Data quality check failed in ecommerce_etl_pipeline_v2",
-    trigger_rule=TriggerRule.ONE_FAILED,
-    dag=dag
-)
+# # Slack Alert on Failure
+# slack_alert = SlackWebhookOperator(
+#     task_id='slack_alert_failure',
+#     http_conn_id='slack_connection',
+#     message="⚠️ Data quality check failed in ecommerce_etl_pipeline_v2",
+#     trigger_rule=TriggerRule.ONE_FAILED,
+#     dag=dag
+# )
 
 # DAG Dependencies
 start >> fetch_product >> extract_snowflake_data >> transform_data >> load_data
-transform_data >> slack_alert
+transform_data 

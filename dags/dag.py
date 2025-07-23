@@ -137,7 +137,7 @@ def load_to_snowflake(ti):
     df = pd.read_json(StringIO(ti.xcom_pull(task_ids='transform_and_validate_data', key='cleaned_data')))
 
     # Replace NaN values with None to prevent Snowflake errors
-    df = df.where(pd.notnull(df), None)
+    df = df.fillna(value={"quantity": 0, "rating": None})
 
     conn = snowflake.connector.connect(
         user=os.getenv('SNOWFLAKE_USER'),

@@ -12,13 +12,14 @@ import logging
 from dotenv import load_dotenv
 import snowflake.connector
 import requests
+from datetime import datetime, timedelta
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
 default_args = {
     'owner': 'airflow',
-    'start_date': days_ago(1),
+    'start_date': datetime.now() - timedelta(days=1),
     'retries': 1
 }
 

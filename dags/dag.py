@@ -1,10 +1,7 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
-# from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
 from airflow.utils.trigger_rule import TriggerRule
-# from airflow.providers.http.operators.simple_http import SimpleHttpOperator
-from airflow.operators.python import PythonOperator
 import pandas as pd
 import os
 import logging
@@ -23,27 +20,21 @@ default_args = {
 }
 
 dag = DAG(
-    dag_id = 'ecommerce_etl_pipeline_v2',
+    dag_id='ecommerce_etl_pipeline_v2',
     default_args=default_args,
     schedule=None,
     catchup=False
 )
 
-# Start
 start = EmptyOperator(task_id='start', dag=dag)
 
-# Fetch product data using requests
-def fetch_product_data():
+def fetch_product_data(ti):
     url = "https://retoolapi.dev/L8OKa9/product_data"
     response = requests.get(url)
-
     if response.status_code != 200:
         raise Exception(f"API failed with status {response.status_code}")
-
-    data = response.json()
-    df = pd.DataFrame(data)
-    df.to_json('/tmp/fetched_product_data.json', orient='records')
-    logging.info("Product data fetched and saved.")
+    df = pd.DataFrame(response.json())
+    ti.xcom_push(key='product_data', value=df.to_json())
 
 fetch_product = PythonOperator(
     task_id='fetch_product_data',
@@ -51,8 +42,7 @@ fetch_product = PythonOperator(
     dag=dag
 )
 
-# Extract Snowflake data
-def extract_snowflake():
+def extract_snowflake(ti):
     conn = snowflake.connector.connect(
         user=os.getenv('SNOWFLAKE_USER'),
         password=os.getenv('SNOWFLAKE_PASSWORD'),
@@ -63,13 +53,13 @@ def extract_snowflake():
     )
     cur = conn.cursor()
 
-    sales_df = pd.DataFrame(cur.execute("SELECT * FROM sales_data").fetchall(),
+    sales = pd.DataFrame(cur.execute("SELECT * FROM sales_data").fetchall(),
+                         columns=[col[0] for col in cur.description])
+    feedback = pd.DataFrame(cur.execute("SELECT * FROM feedback_data").fetchall(),
                             columns=[col[0] for col in cur.description])
-    feedback_df = pd.DataFrame(cur.execute("SELECT * FROM feedback_data").fetchall(),
-                               columns=[col[0] for col in cur.description])
 
-    sales_df.to_pickle('/tmp/sales.pkl')
-    feedback_df.to_pickle('/tmp/feedback.pkl')
+    ti.xcom_push(key='sales_data', value=sales.to_json())
+    ti.xcom_push(key='feedback_data', value=feedback.to_json())
 
     cur.close()
     conn.close()
@@ -80,11 +70,10 @@ extract_snowflake_data = PythonOperator(
     dag=dag
 )
 
-# Transform & Validate
-def transform_and_check():
-    sales = pd.read_pickle('/tmp/sales.pkl')
-    feedback = pd.read_pickle('/tmp/feedback.pkl')
-    product = pd.read_json('/tmp/fetched_product_data.json')
+def transform_and_check(ti):
+    sales = pd.read_json(ti.xcom_pull(task_ids='extract_snowflake_data', key='sales_data'))
+    feedback = pd.read_json(ti.xcom_pull(task_ids='extract_snowflake_data', key='feedback_data'))
+    product = pd.read_json(ti.xcom_pull(task_ids='fetch_product_data', key='product_data'))
 
     product['product_name'] = product['product_name'].str.title()
     product['category'] = product['category'].str.lower()
@@ -96,17 +85,14 @@ def transform_and_check():
         'feedback_score': 'mean'
     }).reset_index()
 
-    result.to_pickle('/tmp/cleaned_data.pkl')
-
-    # Quality checks
     if result['product_id'].isnull().any():
         raise ValueError("Nulls in product_id")
-
     if not result['product_id'].isin(product['product_id']).all():
         raise ValueError("Sales contain unknown product_ids")
-
     if not result['feedback_score'].between(1, 5).all():
         raise ValueError("Feedback score out of expected range")
+
+    ti.xcom_push(key='cleaned_data', value=result.to_json())
 
 transform_data = PythonOperator(
     task_id='transform_and_validate_data',
@@ -114,10 +100,9 @@ transform_data = PythonOperator(
     dag=dag
 )
 
-# Load into Snowflake
-def load_to_snowflake():
-    df = pd.read_pickle('/tmp/cleaned_data.pkl')
-    
+def load_to_snowflake(ti):
+    df = pd.read_json(ti.xcom_pull(task_ids='transform_and_validate_data', key='cleaned_data'))
+
     conn = snowflake.connector.connect(
         user=os.getenv('SNOWFLAKE_USER'),
         password=os.getenv('SNOWFLAKE_PASSWORD'),
@@ -144,14 +129,4 @@ load_data = PythonOperator(
     dag=dag
 )
 
-# # Slack Alert on Failure
-# slack_alert = SlackWebhookOperator(
-#     task_id='slack_alert_failure',
-#     http_conn_id='slack_connection',
-#     message="⚠️ Data quality check failed in ecommerce_etl_pipeline_v2",
-#     trigger_rule=TriggerRule.ONE_FAILED,
-#     dag=dag
-# )
-
-# DAG Dependencies
 start >> fetch_product >> extract_snowflake_data >> transform_data >> load_data

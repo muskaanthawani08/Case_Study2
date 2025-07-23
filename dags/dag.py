@@ -58,12 +58,27 @@ def extract_snowflake(ti):
 
     sales = pd.DataFrame(cur.execute("SELECT * FROM sales_data").fetchall(),
                          columns=[col[0] for col in cur.description])
+    logging.info("Sales columns: %s", sales.columns.tolist())
+
     feedback = pd.DataFrame(cur.execute("SELECT * FROM feedback_data").fetchall(),
                             columns=[col[0] for col in cur.description])
+    logging.info("Feedback columns: %s", feedback.columns.tolist())
 
-    for df in [sales, feedback]:
-        df['product_id'] = df['product_id'].astype(str)
-        df['user_id'] = df['user_id'].astype(str)
+    # Rename if necessary
+    if 'ProductID' in sales.columns:
+        sales.rename(columns={'ProductID': 'product_id'}, inplace=True)
+    if 'ProductID' in feedback.columns:
+        feedback.rename(columns={'ProductID': 'product_id'}, inplace=True)
+
+    if 'product_id' in sales.columns:
+        sales['product_id'] = sales['product_id'].astype(str)
+    if 'user_id' in sales.columns:
+        sales['user_id'] = sales['user_id'].astype(str)
+
+    if 'product_id' in feedback.columns:
+        feedback['product_id'] = feedback['product_id'].astype(str)
+    if 'user_id' in feedback.columns:
+        feedback['user_id'] = feedback['user_id'].astype(str)
 
     ti.xcom_push(key='sales_data', value=sales.to_json())
     ti.xcom_push(key='feedback_data', value=feedback.to_json())
@@ -83,10 +98,11 @@ def transform_and_check(ti):
     product = pd.read_json(ti.xcom_pull(task_ids='fetch_product_data', key='product_data'))
 
     sales['product_id'] = sales['product_id'].astype(str)
-    sales['user_id'] = sales['user_id'].astype(str)
     feedback['product_id'] = feedback['product_id'].astype(str)
-    feedback['user_id'] = feedback['user_id'].astype(str)
     product['product_id'] = product['product_id'].astype(str)
+
+    sales['user_id'] = sales['user_id'].astype(str)
+    feedback['user_id'] = feedback['user_id'].astype(str)
 
     # Join sales with product
     sales_with_product = sales.merge(product, on='product_id', how='left')
@@ -94,17 +110,16 @@ def transform_and_check(ti):
     # Join with feedback
     full_df = sales_with_product.merge(feedback, on=['product_id', 'user_id'], how='left')
 
-    # Aggregate total quantity and average rating
+    # Aggregate quantity and rating
     result = full_df.groupby('product_id').agg({
         'quantity': 'sum',
         'rating': 'mean'
     }).reset_index()
 
-    # Data quality checks
     if result['product_id'].isnull().any():
         raise ValueError("Missing product_id after join.")
-    if not result['rating'].between(0, 5).all():
-        logging.warning("Some ratings are outside expected range. Data may need review.")
+    if 'rating' in result.columns and not result['rating'].between(0, 5).all():
+        logging.warning("Some ratings are outside expected range (0–5).")
 
     ti.xcom_push(key='cleaned_data', value=result.to_json())
 

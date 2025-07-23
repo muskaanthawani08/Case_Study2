@@ -1,7 +1,7 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
-from airflow.providers.http.operators.http import SimpleHttpOperator
+from airflow.providers.http.operators.simple_http import SimpleHttpOperator
 from airflow.providers.http.sensors.http import HttpSensor
 from airflow.providers.slack.operators.slack_webhook import SlackWebhookOperator
 from airflow.utils.dates import days_ago
@@ -29,10 +29,10 @@ dag = DAG(
     catchup=False
 )
 
-# 🏁 Start Task
+# Start Task
 start = EmptyOperator(task_id='start', dag=dag)
 
-# 🌐 Check REST API
+# Check REST API
 check_api = HttpSensor(
     task_id='check_api',
     http_conn_id='product_api_connection',
@@ -43,7 +43,7 @@ check_api = HttpSensor(
     dag=dag
 )
 
-# 🛒 Fetch Product Data
+# Fetch Product Data
 fetch_product_data = SimpleHttpOperator(
     task_id='fetch_product_data',
     http_conn_id='product_api_connection',
@@ -54,7 +54,7 @@ fetch_product_data = SimpleHttpOperator(
     dag=dag
 )
 
-# 🧊 Extract Snowflake Data
+# Extract Snowflake Data
 def extract_snowflake(**kwargs):
     conn = snowflake.connector.connect(
         user=os.getenv('SNOWFLAKE_USER'),
@@ -84,7 +84,7 @@ extract_data_snowflake = PythonOperator(
     dag=dag
 )
 
-# 🧪 Transform & Validate
+# Transform & Validate
 def transform_and_check():
     sales = pd.read_pickle('/tmp/sales.pkl')
     feedback = pd.read_pickle('/tmp/feedback.pkl')
@@ -118,7 +118,7 @@ transform_data = PythonOperator(
     dag=dag
 )
 
-# 🏁 Load to Snowflake
+# Load to Snowflake
 def load_to_snowflake():
     df = pd.read_pickle('/tmp/cleaned_data.pkl')
     
@@ -148,7 +148,7 @@ load_data = PythonOperator(
     dag=dag
 )
 
-# 🚨 Slack Alert
+# Slack Alert
 slack_alert = SlackWebhookOperator(
     task_id='slack_alert_failure',
     http_conn_id='slack_connection',
@@ -157,6 +157,6 @@ slack_alert = SlackWebhookOperator(
     dag=dag
 )
 
-# 🔗 DAG Dependencies
+# DAG Dependencies
 start >> check_api >> fetch_product_data >> extract_data_snowflake >> transform_data >> load_data
 transform_data >> slack_alert

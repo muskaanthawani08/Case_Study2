@@ -25,7 +25,7 @@ default_args = {
 dag = DAG(
     'ecommerce_etl_pipeline_v2',
     default_args=default_args,
-    schedule_interval=None,
+    schedule=None,
     catchup=False
 )
 

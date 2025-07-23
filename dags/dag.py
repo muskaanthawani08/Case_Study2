@@ -23,7 +23,7 @@ default_args = {
 }
 
 dag = DAG(
-    'ecommerce_etl_pipeline_v2',
+    dag_id = 'ecommerce_etl_pipeline_v2',
     default_args=default_args,
     schedule=None,
     catchup=False
@@ -155,4 +155,3 @@ load_data = PythonOperator(
 
 # DAG Dependencies
 start >> fetch_product >> extract_snowflake_data >> transform_data >> load_data
-transform_data 

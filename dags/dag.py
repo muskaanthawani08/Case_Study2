@@ -136,6 +136,9 @@ transform_data = PythonOperator(
 def load_to_snowflake(ti):
     df = pd.read_json(StringIO(ti.xcom_pull(task_ids='transform_and_validate_data', key='cleaned_data')))
 
+    # Replace NaN values with None to prevent Snowflake errors
+    df = df.where(pd.notnull(df), None)
+
     conn = snowflake.connector.connect(
         user=os.getenv('SNOWFLAKE_USER'),
         password=os.getenv('SNOWFLAKE_PASSWORD'),
@@ -146,7 +149,6 @@ def load_to_snowflake(ti):
     )
     cur = conn.cursor()
 
-    # ✅ Create table if it doesn't exist
     cur.execute("""
         CREATE TABLE IF NOT EXISTS analytics_table (
             product_id STRING,

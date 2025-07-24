@@ -117,6 +117,9 @@ def transform_and_check(ti):
             'rating': 'mean'
         }).reset_index()
 
+        # Fill missing ratings with 0
+        result['rating'] = result['rating'].fillna(0)
+
         logging.info("Transformed Summary:\n%s", result.head())
 
         if not result['rating'].between(0, 5).all():

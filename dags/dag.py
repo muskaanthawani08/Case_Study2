@@ -104,9 +104,9 @@ def transform_and_check(ti):
             # Filtered rows (SKU)
             filtered_df = df[df['product_id'].str.startswith('SKU')]
             
-            # 🛑 Display removed rows that don’t match SKU
+            # Display removed rows that don’t match SKU
             removed_df = df[~df['product_id'].str.startswith('SKU')]
-            logging.info(f"\n⛔ Removed rows from {df_name} (non-SKU):")
+            logging.info(f"\nRemoved rows from {df_name} (non-SKU):")
             logging.info(removed_df)
 
             logging.info(f"{df_name} data filtered to {filtered_df.shape[0]} rows with SKU product_id")

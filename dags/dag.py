@@ -106,12 +106,12 @@ def transform_and_check(ti):
             
             # 🛑 Display removed rows that don’t match SKU
             removed_df = df[~df['product_id'].str.startswith('SKU')]
-            print(f"\n⛔ Removed rows from {df_name} (non-SKU):")
-            print(removed_df)
+            logging.info(f"\n⛔ Removed rows from {df_name} (non-SKU):")
+            logging.info(removed_df)
 
             logging.info(f"{df_name} data filtered to {filtered_df.shape[0]} rows with SKU product_id")
-            print(f"\n✅ DataFrame: {df_name}")
-            print(filtered_df.head())
+            logging.info(f"\n✅ DataFrame: {df_name}")
+            logging.info(filtered_df.head())
 
             # Replace the original with the filtered version
             if df_name == 'sales':

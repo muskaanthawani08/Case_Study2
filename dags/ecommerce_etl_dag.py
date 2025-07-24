@@ -2,7 +2,6 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.operators.empty import EmptyOperator
 from datetime import datetime, timedelta
-
 from extract.extract_product_data import extract_product_data
 from extract.extract_sales_data import extract_sales_data
 from extract.extract_feedback_data import extract_feedback_data
@@ -19,7 +18,7 @@ default_args = {
 dag = DAG(
     dag_id='ecommerce_etl_pipeline_modular',
     default_args=default_args,
-    schedule_interval=None,
+    schedule=None,
     catchup=False
 )
 

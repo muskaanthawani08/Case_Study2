@@ -110,15 +110,19 @@ def transform_and_check(ti):
             df['user_id'] = df['user_id'].astype(str)
 
         for df_name, df in [('sales', sales), ('feedback', feedback), ('product', product)]:
-            original_len = len(df)
-            df = df[df['product_id'].str.startswith('SKU')]
-            logging.info(f"{df_name}: Removed {original_len - len(df)} rows with non-SKU product_id")
-            if df_name == 'sales':
-                sales = df
-            elif df_name == 'feedback':
-                feedback = df
-            elif df_name == 'product':
-                product = df
+            if 'product_id' in df.columns:
+                df['product_id'] = df['product_id'].astype(str)
+                filtered_out_ids = df.loc[~df['product_id'].str.startswith('SKU'), 'product_id'].tolist()
+                logging.info(f"{df_name}: Removed product_ids not starting with 'SKU': {filtered_out_ids}")
+                df = df[df['product_id'].str.startswith('SKU')]
+
+                # Update the DataFrame back
+                if df_name == 'sales':
+                    sales = df
+                elif df_name == 'feedback':
+                    feedback = df
+                elif df_name == 'product':
+                    product = df
 
         product['name'] = product['name'].str.title()
         product['category'] = product['category'].str.lower()

@@ -29,7 +29,7 @@ dag = DAG(
 
 start = EmptyOperator(task_id='start', dag=dag)
 
-# Use SimpleHttpOperator to fetch product data
+# Use HttpOperator to fetch product data
 fetch_product = HttpOperator(
     task_id='fetch_product_data',
     http_conn_id='product_api',
@@ -40,7 +40,6 @@ fetch_product = HttpOperator(
     do_xcom_push=True,
     dag=dag
 )
-
 
 # Extract data from Snowflake
 def extract_snowflake(ti):
@@ -99,24 +98,28 @@ def transform_and_check(ti):
         logging.info("Feedback: %s", feedback.columns.tolist())
         logging.info("Product: %s", product.columns.tolist())
 
+        # Ensure all product_ids are strings
         for df_name, df in [('sales', sales), ('feedback', feedback), ('product', product)]:
             if 'product_id' not in df.columns:
                 raise KeyError(f"'product_id' missing in {df_name}")
             df['product_id'] = df['product_id'].astype(str)
 
+        # Ensure user_id is string
         for df_name, df in [('sales', sales), ('feedback', feedback)]:
             if 'user_id' not in df.columns:
                 raise KeyError(f"'user_id' missing in {df_name}")
             df['user_id'] = df['user_id'].astype(str)
 
+        # ✅ Filter product_ids that don't start with 'SKU' and log them
         for df_name, df in [('sales', sales), ('feedback', feedback), ('product', product)]:
             if 'product_id' in df.columns:
                 df['product_id'] = df['product_id'].astype(str)
-                filtered_out_ids = df.loc[~df['product_id'].str.startswith('SKU'), 'product_id'].tolist()
-                logging.info(f"{df_name}: Removed product_ids not starting with 'SKU': {filtered_out_ids}")
+                removed_ids = df.loc[~df['product_id'].str.startswith('SKU'), 'product_id'].unique().tolist()
+                if removed_ids:
+                    logging.info(f"{df_name}: Removed product_ids not starting with 'SKU': {removed_ids}")
                 df = df[df['product_id'].str.startswith('SKU')]
 
-                # Update the DataFrame back
+                # Assign filtered DataFrame back
                 if df_name == 'sales':
                     sales = df
                 elif df_name == 'feedback':
@@ -124,15 +127,18 @@ def transform_and_check(ti):
                 elif df_name == 'product':
                     product = df
 
+        # Format product details
         product['name'] = product['name'].str.title()
         product['category'] = product['category'].str.lower()
 
+        # Merge all datasets
         sales_product = sales.merge(product, on='product_id', how='left')
         full_df = sales_product.merge(feedback, on=['product_id', 'user_id'], how='left')
 
         if 'quantity' not in full_df.columns or 'rating' not in full_df.columns:
             raise KeyError("Missing 'quantity' or 'rating' column in joined data.")
 
+        # Aggregation
         result = full_df.groupby('product_id').agg({
             'quantity': 'sum',
             'rating': 'mean'
@@ -141,6 +147,7 @@ def transform_and_check(ti):
         result['rating'] = result['rating'].fillna(0)
 
         logging.info("Transformed Summary:\n%s", result.head())
+        logging.info("Final product_ids in result table: %s", result['product_id'].unique().tolist())
 
         if not result['rating'].between(0, 5).all():
             logging.warning("⚠ Some feedback ratings fall outside 0–5 range.")
@@ -201,4 +208,5 @@ load_data = PythonOperator(
     dag=dag
 )
 
+# DAG pipeline flow
 start >> fetch_product >> extract_snowflake_data >> transform_data >> load_data

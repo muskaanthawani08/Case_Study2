@@ -118,10 +118,20 @@ def transform_and_check(ti):
                 elif df_name == 'product':
                     product = df
 
+        # Format product details
         product['name'] = product['name'].str.title()
         product['category'] = product['category'].str.lower()
 
+        # 🚨 New block: audit invalid product_ids
+        for df_name, df in [('sales', sales), ('feedback', feedback), ('product', product)]:
+            if 'product_id' in df.columns:
+                non_sku_ids = df.loc[~df['product_id'].str.startswith('SKU'), 'product_id'].unique().tolist()
+                if non_sku_ids:
+                    logging.warning(f"{df_name}: ❌ These product_ids don't start with 'SKU': {non_sku_ids}")
+
+        # Merge all datasets
         sales_product = sales.merge(product, on='product_id', how='left')
+
         full_df = sales_product.merge(feedback, on=['product_id', 'user_id'], how='left')
 
         if 'quantity' not in full_df.columns or 'rating' not in full_df.columns:

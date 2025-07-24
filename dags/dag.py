@@ -86,6 +86,7 @@ extract_snowflake_data = PythonOperator(
 
 def transform_and_check(ti):
     try:
+        # ⬇ Load and parse data from previous tasks
         sales = pd.read_json(StringIO(ti.xcom_pull(task_ids='extract_snowflake_data', key='sales_data')))
         feedback = pd.read_json(StringIO(ti.xcom_pull(task_ids='extract_snowflake_data', key='feedback_data')))
         product_raw = ti.xcom_pull(task_ids='fetch_product_data')
@@ -95,6 +96,7 @@ def transform_and_check(ti):
         logging.info("Feedback: %s", feedback.columns.tolist())
         logging.info("Product: %s", product.columns.tolist())
 
+        # ⬇ Standardize columns
         for df_name, df in [('sales', sales), ('feedback', feedback), ('product', product)]:
             if 'product_id' not in df.columns:
                 raise KeyError(f"'product_id' missing in {df_name}")
@@ -105,44 +107,37 @@ def transform_and_check(ti):
                 raise KeyError(f"'user_id' missing in {df_name}")
             df['user_id'] = df['user_id'].astype(str)
 
+        # ⬇ Filter out product_ids not starting with 'SKU'
         for df_name, df in [('sales', sales), ('feedback', feedback), ('product', product)]:
-            if 'product_id' in df.columns:
-                removed_ids = df.loc[~df['product_id'].str.startswith('SKU'), 'product_id'].unique().tolist()
-                if removed_ids:
-                    logging.info(f"{df_name}: Removed product_ids not starting with 'SKU': {removed_ids}")
-                df = df[df['product_id'].str.startswith('SKU')]
-                if df_name == 'sales':
-                    sales = df
-                elif df_name == 'feedback':
-                    feedback = df
-                elif df_name == 'product':
-                    product = df
+            invalid_ids = df.loc[~df['product_id'].str.startswith('SKU'), 'product_id'].unique().tolist()
+            if invalid_ids:
+                logging.warning(f"{df_name}: ❌ Removed product_ids not starting with 'SKU': {invalid_ids}")
+            df = df[df['product_id'].str.startswith('SKU')]
+            if df_name == 'sales':
+                sales = df
+            elif df_name == 'feedback':
+                feedback = df
+            elif df_name == 'product':
+                product = df
 
-        # Format product details
+        # ⬇ Format product columns
         product['name'] = product['name'].str.title()
         product['category'] = product['category'].str.lower()
 
-        # 🚨 New block: audit invalid product_ids
-        for df_name, df in [('sales', sales), ('feedback', feedback), ('product', product)]:
-            if 'product_id' in df.columns:
-                non_sku_ids = df.loc[~df['product_id'].str.startswith('SKU'), 'product_id'].unique().tolist()
-                if non_sku_ids:
-                    logging.warning(f"{df_name}: ❌ These product_ids don't start with 'SKU': {non_sku_ids}")
-
-        # Merge all datasets
+        # ⬇ Merge sales + product + feedback
         sales_product = sales.merge(product, on='product_id', how='left')
-
         full_df = sales_product.merge(feedback, on=['product_id', 'user_id'], how='left')
 
         if 'quantity' not in full_df.columns or 'rating' not in full_df.columns:
             raise KeyError("Missing 'quantity' or 'rating' column in joined data.")
 
-        # ✅ Final safety check before aggregation
-        invalid_ids = full_df.loc[~full_df['product_id'].str.startswith('SKU'), 'product_id'].unique().tolist()
-        if invalid_ids:
-            logging.warning(f"❌ Removing non-SKU product_ids before aggregation: {invalid_ids}")
+        # ⬇ Final filter before aggregation
+        final_invalid_ids = full_df.loc[~full_df['product_id'].str.startswith('SKU'), 'product_id'].unique().tolist()
+        if final_invalid_ids:
+            logging.warning(f"❌ Final cleanup: removing non-SKU product_ids before aggregation: {final_invalid_ids}")
             full_df = full_df[full_df['product_id'].str.startswith('SKU')]
 
+        # ⬇ Aggregate results
         result = full_df.groupby('product_id').agg({
             'quantity': 'sum',
             'rating': 'mean'

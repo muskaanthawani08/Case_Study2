@@ -18,9 +18,14 @@ def load_to_snowflake(ti):
     )
     cur = conn.cursor()
 
-    with open("sql/load_to_snowflake.sql", "r") as f:
-        create_sql = f.read()
-    cur.execute(create_sql)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS daily_summary (
+            product_id STRING,
+            quantity NUMBER,
+            rating FLOAT
+        );
+    """)
+
 
     for _, row in df.iterrows():
         cur.execute(

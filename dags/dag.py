@@ -10,6 +10,7 @@ import requests
 from datetime import datetime, timedelta
 from io import StringIO
 
+# Load environment variables and configure logging
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
@@ -130,8 +131,11 @@ def load_to_snowflake(ti):
     try:
         df = pd.read_json(StringIO(ti.xcom_pull(task_ids='transform_and_validate_data', key='cleaned_data')))
 
-        # Sanitize NaNs
+        # Replace NaNs with None and default quantity to 0
         df = df.fillna(value={"quantity": 0, "rating": None})
+
+        # Preview inserted data
+        logging.info("Loading to Snowflake:\n%s", df.head())
 
         conn = snowflake.connector.connect(
             user=os.getenv('SNOWFLAKE_USER'),
@@ -164,7 +168,7 @@ def load_to_snowflake(ti):
         logging.error(f"Failed to load data into Snowflake: {e}")
         raise
 
-fetch_product = PythonOperator(task_id='fetch_product_data', python_callable=fetch_product, dag=dag)
+fetch_product = PythonOperator(task_id='fetch_product_data', python_callable=fetch_product_data, dag=dag)
 extract_snowflake_data = PythonOperator(task_id='extract_snowflake_data', python_callable=extract_snowflake, dag=dag)
 transform_data = PythonOperator(task_id='transform_and_validate_data', python_callable=transform_and_check, dag=dag)
 load_data = PythonOperator(task_id='load_to_snowflake', python_callable=load_to_snowflake, dag=dag)

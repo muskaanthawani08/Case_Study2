@@ -29,7 +29,6 @@ dag = DAG(
 
 start = EmptyOperator(task_id='start', dag=dag)
 
-# Use HttpOperator to fetch product data
 fetch_product = HttpOperator(
     task_id='fetch_product_data',
     http_conn_id='product_api',
@@ -41,7 +40,6 @@ fetch_product = HttpOperator(
     dag=dag
 )
 
-# Extract data from Snowflake
 def extract_snowflake(ti):
     try:
         conn = snowflake.connector.connect(
@@ -86,7 +84,6 @@ extract_snowflake_data = PythonOperator(
     dag=dag
 )
 
-# Transformation and Aggregation
 def transform_and_check(ti):
     try:
         sales = pd.read_json(StringIO(ti.xcom_pull(task_ids='extract_snowflake_data', key='sales_data')))
@@ -98,28 +95,22 @@ def transform_and_check(ti):
         logging.info("Feedback: %s", feedback.columns.tolist())
         logging.info("Product: %s", product.columns.tolist())
 
-        # Ensure all product_ids are strings
         for df_name, df in [('sales', sales), ('feedback', feedback), ('product', product)]:
             if 'product_id' not in df.columns:
                 raise KeyError(f"'product_id' missing in {df_name}")
             df['product_id'] = df['product_id'].astype(str)
 
-        # Ensure user_id is string
         for df_name, df in [('sales', sales), ('feedback', feedback)]:
             if 'user_id' not in df.columns:
                 raise KeyError(f"'user_id' missing in {df_name}")
             df['user_id'] = df['user_id'].astype(str)
 
-        # ✅ Filter product_ids that don't start with 'SKU' and log them
         for df_name, df in [('sales', sales), ('feedback', feedback), ('product', product)]:
             if 'product_id' in df.columns:
-                df['product_id'] = df['product_id'].astype(str)
                 removed_ids = df.loc[~df['product_id'].str.startswith('SKU'), 'product_id'].unique().tolist()
                 if removed_ids:
                     logging.info(f"{df_name}: Removed product_ids not starting with 'SKU': {removed_ids}")
                 df = df[df['product_id'].str.startswith('SKU')]
-
-                # Assign filtered DataFrame back
                 if df_name == 'sales':
                     sales = df
                 elif df_name == 'feedback':
@@ -127,18 +118,21 @@ def transform_and_check(ti):
                 elif df_name == 'product':
                     product = df
 
-        # Format product details
         product['name'] = product['name'].str.title()
         product['category'] = product['category'].str.lower()
 
-        # Merge all datasets
         sales_product = sales.merge(product, on='product_id', how='left')
         full_df = sales_product.merge(feedback, on=['product_id', 'user_id'], how='left')
 
         if 'quantity' not in full_df.columns or 'rating' not in full_df.columns:
             raise KeyError("Missing 'quantity' or 'rating' column in joined data.")
 
-        # Aggregation
+        # ✅ Final safety check before aggregation
+        invalid_ids = full_df.loc[~full_df['product_id'].str.startswith('SKU'), 'product_id'].unique().tolist()
+        if invalid_ids.any():
+            logging.warning(f"❌ Removing non-SKU product_ids before aggregation: {invalid_ids}")
+            full_df = full_df[full_df['product_id'].str.startswith('SKU')]
+
         result = full_df.groupby('product_id').agg({
             'quantity': 'sum',
             'rating': 'mean'
@@ -163,11 +157,9 @@ transform_data = PythonOperator(
     dag=dag
 )
 
-# Load into Snowflake
 def load_to_snowflake(ti):
     try:
         df = pd.read_json(StringIO(ti.xcom_pull(task_ids='transform_and_validate_data', key='cleaned_data')))
-
         df = df.fillna(value={"quantity": 0, "rating": 0})
         logging.info("Cleaned DataFrame before insert:\n%s", df.head())
 
@@ -208,5 +200,4 @@ load_data = PythonOperator(
     dag=dag
 )
 
-# DAG pipeline flow
 start >> fetch_product >> extract_snowflake_data >> transform_data >> load_data

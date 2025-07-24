@@ -151,7 +151,7 @@ def load_to_snowflake(ti):
         cur = conn.cursor()
 
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS analytics_table (
+            CREATE TABLE IF NOT EXISTS daily_summary (
                 product_id STRING,
                 quantity NUMBER,
                 rating FLOAT

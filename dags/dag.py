@@ -127,7 +127,7 @@ def transform_and_check(ti):
         logging.info("Transformed Summary:\n%s", result.head())
  
         if not result['rating'].between(0, 5).all():
-            logging.warning("⚠ Some feedback ratings fall outside 0–5 range.")
+            logging.warning("Some feedback ratings fall outside 0-5 range.")
  
         ti.xcom_push(key='cleaned_data', value=result.to_json())
     except Exception as e:

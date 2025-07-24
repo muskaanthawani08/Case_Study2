@@ -100,12 +100,18 @@ def transform_and_check(ti):
             if 'product_id' not in df.columns:
                 raise KeyError(f"'product_id' missing in {df_name}")
             df['product_id'] = df['product_id'].astype(str)
-            df = df[df['product_id'].str.startswith('SKU')]
+            filtered_df = df[df['product_id'].str.startswith('SKU')]
 
-            logging.info(f"{df_name} data filtered to {df.shape[0]} rows with SKU product_id")
+            logging.info(f"{df_name} data filtered to {filtered_df.shape[0]} rows with SKU product_id")
             print(f"\n DataFrame: {df_name}")
-            print(df.head())  
+            print(filtered_df.head())
 
+            if df_name == 'sales':
+                sales = filtered_df
+            elif df_name == 'feedback':
+                feedback = filtered_df
+            elif df_name == 'product':
+                product = filtered_df
  
         for df_name, df in [('sales', sales), ('feedback', feedback)]:
             if 'user_id' not in df.columns:

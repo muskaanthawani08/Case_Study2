@@ -109,6 +109,17 @@ def transform_and_check(ti):
                 raise KeyError(f"'user_id' missing in {df_name}")
             df['user_id'] = df['user_id'].astype(str)
 
+        for df_name, df in [('sales', sales), ('feedback', feedback), ('product', product)]:
+            original_len = len(df)
+            df = df[df['product_id'].str.startswith('SKU')]
+            logging.info(f"{df_name}: Removed {original_len - len(df)} rows with non-SKU product_id")
+            if df_name == 'sales':
+                sales = df
+            elif df_name == 'feedback':
+                feedback = df
+            elif df_name == 'product':
+                product = df
+
         product['name'] = product['name'].str.title()
         product['category'] = product['category'].str.lower()
 

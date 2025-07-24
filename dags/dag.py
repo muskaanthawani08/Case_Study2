@@ -103,17 +103,15 @@ def transform_and_check(ti):
             df = df[df['product_id'].str.startswith('SKU')]
 
             logging.info(f"{df_name} data filtered to {df.shape[0]} rows with SKU product_id")
+            print(f"\n DataFrame: {df_name}")
+            print(df.head())  
 
  
         for df_name, df in [('sales', sales), ('feedback', feedback)]:
             if 'user_id' not in df.columns:
                 raise KeyError(f"'user_id' missing in {df_name}")
             df['user_id'] = df['user_id'].astype(str)
-            
-            print(f"\n🧾 DataFrame: {df_name}")
-            print(df.head())  # You can use df.to_string() if you want the full output
 
- 
         sales_product = sales.merge(product, on='product_id', how='left')
         full_df = sales_product.merge(feedback, on=['product_id', 'user_id'], how='left')
  

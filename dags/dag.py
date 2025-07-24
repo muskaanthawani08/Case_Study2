@@ -129,7 +129,7 @@ def transform_and_check(ti):
 
         # ✅ Final safety check before aggregation
         invalid_ids = full_df.loc[~full_df['product_id'].str.startswith('SKU'), 'product_id'].unique().tolist()
-        if invalid_ids.any():
+        if invalid_ids:
             logging.warning(f"❌ Removing non-SKU product_ids before aggregation: {invalid_ids}")
             full_df = full_df[full_df['product_id'].str.startswith('SKU')]
 

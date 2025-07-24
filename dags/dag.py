@@ -135,10 +135,10 @@ def load_to_snowflake(ti):
         df = pd.read_json(StringIO(ti.xcom_pull(task_ids='transform_and_validate_data', key='cleaned_data')))
 
         # Replace NaNs with None and default quantity to 0
-        df = df.fillna(value={"quantity": 0, "rating": None})
+        df = df.fillna(value={"quantity": 0, "rating": 0})
 
         # Preview inserted data
-        logging.info("Loading to Snowflake:\n%s", df.head())
+        logging.info("Cleaned DataFrame before insert:\n%s", df.head())
 
         conn = snowflake.connector.connect(
             user=os.getenv('SNOWFLAKE_USER'),

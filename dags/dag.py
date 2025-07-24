@@ -88,68 +88,75 @@ def extract_snowflake(ti):
  
 def transform_and_check(ti):
     try:
+        # Extract data from XComs
         sales = pd.read_json(StringIO(ti.xcom_pull(task_ids='extract_snowflake_data', key='sales_data')))
         feedback = pd.read_json(StringIO(ti.xcom_pull(task_ids='extract_snowflake_data', key='feedback_data')))
         product = pd.read_json(StringIO(ti.xcom_pull(task_ids='fetch_product_data', key='product_data')))
- 
-        logging.info("Sales: %s", sales.columns.tolist())
-        logging.info("Feedback: %s", feedback.columns.tolist())
-        logging.info("Product: %s", product.columns.tolist())
- 
+
+        # Sanitize 'product_id' and 'user_id'
         for df_name, df in [('sales', sales), ('feedback', feedback), ('product', product)]:
             if 'product_id' not in df.columns:
                 raise KeyError(f"'product_id' missing in {df_name}")
             df['product_id'] = df['product_id'].astype(str)
-            
-            # Filtered rows (SKU)
-            filtered_df = df[df['product_id'].str.startswith('SKU')]
-            
-            # Display removed rows that don’t match SKU
-            removed_df = df[~df['product_id'].str.startswith('SKU')]
-            logging.info(f"\nRemoved rows from {df_name} (non-SKU):")
-            logging.info(removed_df)
 
-            logging.info(f"{df_name} data filtered to {filtered_df.shape[0]} rows with SKU product_id")
-            logging.info(f"\n✅ DataFrame: {df_name}")
-            logging.info(filtered_df.head())
-
-            # Replace the original with the filtered version
-            if df_name == 'sales':
-                sales = filtered_df
-            elif df_name == 'feedback':
-                feedback = filtered_df
-            elif df_name == 'product':
-                product = filtered_df
-
- 
         for df_name, df in [('sales', sales), ('feedback', feedback)]:
             if 'user_id' not in df.columns:
                 raise KeyError(f"'user_id' missing in {df_name}")
             df['user_id'] = df['user_id'].astype(str)
 
+        # Drop rows with null primary keys
+        sales.dropna(subset=['product_id', 'user_id'], inplace=True)
+        feedback.dropna(subset=['product_id', 'user_id'], inplace=True)
+        product.dropna(subset=['product_id'], inplace=True)
+        logging.info(f"Primary key validation complete. Remaining rows: sales={sales.shape[0]}, feedback={feedback.shape[0]}, product={product.shape[0]}")
+
+        # Filter only SKU-prefixed product IDs
+        for df_name, df in [('sales', sales), ('feedback', feedback), ('product', product)]:
+            df = df[df['product_id'].str.startswith('SKU')]
+            logging.info(f"{df_name} filtered to SKU-prefixed product_id. Remaining: {df.shape[0]}")
+            if df_name == 'sales': sales = df
+            elif df_name == 'feedback': feedback = df
+            elif df_name == 'product': product = df
+
+        # Enforce referential integrity: only keep sales with valid product_id
+        sales = sales[sales['product_id'].isin(product['product_id'])]
+        logging.info(f"Referential integrity enforced. Valid sales records: {sales.shape[0]}")
+
+        # Filter feedback scores between 1–5
+        if 'rating' not in feedback.columns:
+            raise KeyError("'rating' column missing in feedback data.")
+        feedback = feedback[feedback['rating'].between(1, 5, inclusive='both')]
+        logging.info(f"Feedback score range validated (1–5). Remaining feedback records: {feedback.shape[0]}")
+
+        # Merge sales with product and feedback data
         sales_product = sales.merge(product, on='product_id', how='left')
         full_df = sales_product.merge(feedback, on=['product_id', 'user_id'], how='left')
- 
+
+        # Confirm required columns exist
         if 'quantity' not in full_df.columns or 'rating' not in full_df.columns:
             raise KeyError("Missing 'quantity' or 'rating' column in joined data.")
- 
+
+        # Group and aggregate
         result = full_df.groupby('product_id').agg({
             'quantity': 'sum',
             'rating': 'mean'
         }).reset_index()
- 
-        # Fill missing ratings with 0
+
+        # Replace NaN ratings with 0
         result['rating'] = result['rating'].fillna(0)
- 
-        logging.info("Transformed Summary:\n%s", result.head())
- 
+
+        # Final sanity check for ratings
         if not result['rating'].between(0, 5).all():
-            logging.warning("Some feedback ratings fall outside 0-5 range.")
- 
+            logging.warning("Some aggregated ratings fall outside 0–5 range.")
+
+        # Log and push results
+        logging.info("Final Transformed Summary:\n%s", result.head())
         ti.xcom_push(key='cleaned_data', value=result.to_json())
+
     except Exception as e:
         logging.error(f"Transformation failed: {e}")
         raise
+
  
 def load_to_snowflake(ti):
     try:

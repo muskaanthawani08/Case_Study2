@@ -1,7 +1,7 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
-from airflow.providers.http.operators.http import SimpleHttpOperator
+from airflow.providers.http.operators.http import HttpOperator
 import pandas as pd
 import os
 import logging
@@ -29,8 +29,8 @@ dag = DAG(
 
 start = EmptyOperator(task_id='start', dag=dag)
 
-# ✅ Step 1: Use SimpleHttpOperator to fetch product data
-fetch_product = SimpleHttpOperator(
+# Use SimpleHttpOperator to fetch product data
+fetch_product = HttpOperator(
     task_id='fetch_product_data',
     http_conn_id='product_api',
     endpoint='L8OKa9/product_data',
@@ -41,7 +41,8 @@ fetch_product = SimpleHttpOperator(
     dag=dag
 )
 
-# ✅ Step 2: Extract data from Snowflake
+
+# Extract data from Snowflake
 def extract_snowflake(ti):
     try:
         conn = snowflake.connector.connect(
@@ -86,7 +87,7 @@ extract_snowflake_data = PythonOperator(
     dag=dag
 )
 
-# ✅ Step 3: Transformation and Aggregation
+# Transformation and Aggregation
 def transform_and_check(ti):
     try:
         sales = pd.read_json(StringIO(ti.xcom_pull(task_ids='extract_snowflake_data', key='sales_data')))
@@ -140,7 +141,7 @@ transform_data = PythonOperator(
     dag=dag
 )
 
-# ✅ Step 4: Load into Snowflake
+# Load into Snowflake
 def load_to_snowflake(ti):
     try:
         df = pd.read_json(StringIO(ti.xcom_pull(task_ids='transform_and_validate_data', key='cleaned_data')))

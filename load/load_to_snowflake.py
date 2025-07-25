@@ -1,7 +1,6 @@
 import snowflake.connector
 import os
 import pandas as pd
-import logging
 from io import StringIO
 
 def load_to_snowflake(ti):
@@ -13,8 +12,8 @@ def load_to_snowflake(ti):
     df = df.fillna({'quantity': 0, 'rating': 0})
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
     df = df[df['date'].notna()]
-    df['date'] = df['date'].dt.strftime('%Y-%m-%d %H:%M:%S')  # Format as string for SQL
-    df.rename(columns = {'date': 'event_date'}, inplace = True)
+    df['event_date'] = df['date'].dt.strftime('%Y-%m-%d %H:%M:%S')  # Format as string for SQL
+
     # Convert DataFrame rows to list of tuples
     insert_data = df[['product_id', 'quantity', 'rating', 'event_date']].values.tolist()
 
@@ -30,7 +29,7 @@ def load_to_snowflake(ti):
     cur = conn.cursor()
 
     try:
-        # Create table with properly quoted column name
+        # Create table with properly quoted SQL
         cur.execute("""
             CREATE TABLE IF NOT EXISTS daily_summary (
                 product_id STRING,
@@ -40,8 +39,8 @@ def load_to_snowflake(ti):
             );
         """)
 
-        # Use single quotes around SQL string to allow double quotes in column names
-        insert_stmt = 'INSERT INTO daily_summary (product_id, quantity, rating, event_date) VALUES (%s, %s, %s, %s)'
+        # Insert data into the table
+        insert_stmt = "INSERT INTO daily_summary (product_id, quantity, rating, event_date) VALUES (%s, %s, %s, %s)"
         cur.executemany(insert_stmt, insert_data)
 
         conn.commit()

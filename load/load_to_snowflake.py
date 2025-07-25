@@ -1,3 +1,9 @@
+import snowflake.connector
+import os
+import pandas as pd
+import logging
+from io import StringIO
+
 def load_to_snowflake(ti):
     df = pd.read_json(StringIO(ti.xcom_pull(task_ids='transform_and_join', key='cleaned_data')))
     df = df.fillna({'quantity': 0, 'rating': 0})
@@ -37,3 +43,4 @@ def load_to_snowflake(ti):
     conn.commit()
     cur.close()
     conn.close()
+

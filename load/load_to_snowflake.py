@@ -31,12 +31,12 @@ def load_to_snowflake(ti):
             product_id STRING,
             quantity NUMBER,
             rating FLOAT,
-            date DATE
+            "date" DATE
         );
     """)
 
     cur.executemany(
-        "INSERT INTO daily_summary (product_id, quantity, rating, date) VALUES (%s, %s, %s, %s)",
+        "INSERT INTO daily_summary (product_id, quantity, rating, "date") VALUES (%s, %s, %s, %s)",
         insert_data
     )
 

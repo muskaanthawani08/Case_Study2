@@ -13,8 +13,8 @@ def transform_and_join(ti):
     for df in [sales, feedback]:
         df['user_id'] = df['user_id'].astype(str)
 
-    sales.dropna(subset=['product_id', 'user_id'], inplace=True)
-    feedback.dropna(subset=['product_id', 'user_id'], inplace=True)
+    sales.dropna(subset=['product_id', 'user_id','date'], inplace=True)
+    feedback.dropna(subset=['product_id', 'user_id','date'], inplace=True)
     product.dropna(subset=['product_id'], inplace=True)
 
     sales = sales[sales['product_id'].str.startswith('SKU')]
@@ -25,9 +25,12 @@ def transform_and_join(ti):
     feedback = feedback[feedback['rating'].between(1, 5)]
 
     sales_product = sales.merge(product, on='product_id', how='left')
-    full_df = sales_product.merge(feedback, on=['product_id', 'user_id'], how='left')
+    full_df = sales_product.merge(feedback, on=['product_id', 'user_id','date'], how='left')
 
-    result = full_df.groupby('product_id').agg({'quantity': 'sum', 'rating': 'mean'}).reset_index()
+    result = full_df.groupby(['product_id','date']).agg({
+        'quantity': 'sum', 
+        'rating': 'mean'}).reset_index()
+    
     result['rating'] = result['rating'].fillna(0)
 
     ti.xcom_push(key='cleaned_data', value=result.to_json())

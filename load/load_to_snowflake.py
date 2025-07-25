@@ -22,15 +22,16 @@ def load_to_snowflake(ti):
         CREATE TABLE IF NOT EXISTS daily_summary (
             product_id STRING,
             quantity NUMBER,
-            rating FLOAT
+            rating FLOAT,
+            date date    
         );
     """)
 
 
     for _, row in df.iterrows():
         cur.execute(
-            "INSERT INTO daily_summary (product_id, quantity, rating) VALUES (%s, %s, %s)",
-            (row['product_id'], row['quantity'], row['rating'])
+            "INSERT INTO daily_summary (product_id, quantity, rating) VALUES (%s, %s, %s, %s)",
+            (row['product_id'], row['quantity'], row['rating'], row['date'])
         )
 
     conn.commit()

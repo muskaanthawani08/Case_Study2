@@ -29,8 +29,8 @@ def load_to_snowflake(ti):
 
 
     for _, row in df.iterrows():
-        cur.execute(
-            "INSERT INTO daily_summary (product_id, quantity, rating) VALUES (%s, %s, %s, %s)",
+        cur.executemany(
+            "INSERT INTO daily_summary (product_id, quantity, rating, date) VALUES (%s, %s, %s, %s)",
             (row['product_id'], row['quantity'], row['rating'], row['date'])
         )
 

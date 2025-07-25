@@ -22,6 +22,7 @@ def extract_feedback_data(ti):
         feedback.columns = map(str.lower, feedback.columns)
         feedback['product_id'] = feedback['product_id'].astype(str)
         feedback['user_id'] = feedback['user_id'].astype(str)
+        feedback['date'] = pd.to_datetime(feedback['date'], errors='coerce')
         feedback['date'] = feedback['date'].dt.strftime('%Y-%m-%d %H:%M:%S')
         ti.xcom_push(key='feedback_data', value=feedback.to_json())
     except Exception as e:

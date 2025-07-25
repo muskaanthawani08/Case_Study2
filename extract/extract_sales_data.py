@@ -22,7 +22,9 @@ def extract_sales_data(ti):
         sales.columns = map(str.lower, sales.columns)
         sales['product_id'] = sales['product_id'].astype(str)
         sales['user_id'] = sales['user_id'].astype(str)
+        sales['date'] = pd.to_datetime(sales['date'], errors='coerce')
         sales['date'] = sales['date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+
 
         ti.xcom_push(key='sales_data', value=sales.to_json())
     except Exception as e:
